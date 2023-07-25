@@ -2,8 +2,8 @@
 #### Author https://aristov.tech
 #### В предыдущей книге https://github.com/aeuge/Postgres14book мы рассматривали архитектуру, особенности работы с большими данными, облака, кластеризацию и кубернетес, современные бэкапы и репликацию. 
 #### В этой книге будет акцент на внутреннее устройство новой 16 версии PostgreSQL и методы оптимизации производительности
-#### Для демонстрации внутреннего устройства создана уникальная БД по пассажирским автобусным перевозкам в Тайланде. Подробнее в каталоге [Thai booking](https://github.com/aeuge/postgres16book/blob/main/database/README.md)
-## Оглавление
+#### Для демонстрации внутреннего устройства создана уникальная БД по пассажирским автобусным перевозкам в Тайланде. Подробнее [Thai booking](https://github.com/aeuge/postgres16book/blob/main/database/README.md)
+## Оглавление !!! пока не актуально, итоговая структура в разработке
 1. [PostgreSQL 16. Установка, новые возможности](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER01.md)
 2. [Физический уровень](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER02.md)
 3. [Работа с консольной утилитой psql](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER03.md)
