@@ -2,4 +2,4 @@
 ## Книга: PostgreSQL 16 под капотом: архитектура и методы оптимизации
 #### Author https://aristov.tech
 #### Объем порядка 6 млн.строк, схема БД:
-![Схема Thai booking](https://github.com/aeuge/Postgres16book/blob/database/thai_book.png)
+![Схема Thai booking](https://github.com/aeuge/postgres16book/blob/main/database/thai_book.png)
