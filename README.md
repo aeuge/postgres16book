@@ -4,7 +4,7 @@
 #### В этой книге будет акцент на внутреннее устройство новой 16 версии PostgreSQL и методы оптимизации производительности
 #### Для демонстрации внутреннего устройства создана уникальная БД по пассажирским автобусным перевозкам в Тайланде. Подробнее [Thai booking](https://github.com/aeuge/postgres16book/blob/main/database/README.md)
 ## Оглавление !!! пока не актуально, итоговая структура в разработке
-1. [Первичная настройка ОС и PostgreSQL](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER01.md)
+1. [Настройка ВМ, ОС и PostgreSQL](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER01.md)
 2. [Коннектинг к PostgreSQL. Права пользователя](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER02.md)
 3. [Настройка файловой системы](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER03.md)
 4. [Настройка бэкапов и репликации](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER04.md)

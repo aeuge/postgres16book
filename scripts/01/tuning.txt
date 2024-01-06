@@ -1,0 +1,29 @@
+wget https://storage.googleapis.com/thaibus/thai_small.tar.gz && tar -xf thai_small.tar.gz && psql < thai.sql
+psql -d thai
+\l+
+\timing
+SELECT count(*) FROM book.tickets;
+SELECT count(1) FROM book.tickets;
+vacuum analyze book.tickets;
+set random_page_cost = 1;
+
+\d+ book.tickets
+UPDATE book.tickets SET fio = 'no' WHERE fio is NULL;
+ALTER TABLE book.tickets ALTER COLUMN fio SET NOT NULL;
+EXPLAIN SELECT count(fio) FROM book.tickets;
+
+
+CREATE EXTENSION "uuid-ossp";
+\timing
+CREATE TABLE records2 (id int8 not null, filler text);
+INSERT INTO records2 SELECT id, repeat(' ', 100) FROM generate_series(1, 10000000) id;
+
+CREATE TABLE records3 (uuid_v4 uuid not null, filler text);
+INSERT INTO records3 SELECT gen_random_uuid(), repeat(' ', 100) FROM generate_series(1, 10000000) id;
+
+CREATE INDEX ON records2 (id);
+CREATE INDEX ON records3 (uuid_v4);
+
+SELECT COUNT(id) FROM records2;
+SELECT COUNT(uuid_v4) FROM records3;
+
