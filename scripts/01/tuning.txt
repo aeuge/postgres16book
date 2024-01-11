@@ -1,20 +1,21 @@
 wget https://storage.googleapis.com/thaibus/thai_small.tar.gz && tar -xf thai_small.tar.gz && psql < thai.sql
 psql -d thai
 \l+
-\timing
-SELECT count(*) FROM book.tickets;
-SELECT count(1) FROM book.tickets;
-vacuum analyze book.tickets;
-set random_page_cost = 1;
+EXPLAIN SELECT count(*) FROM book.tickets;
+EXPLAIN SELECT count(1) FROM book.tickets;
+VACUUM ANALYZE book.tickets;
+SET random_page_cost = 1;
+EXPLAIN SELECT count(1) FROM book.tickets;
 
 \d+ book.tickets
+ALTER TABLE book.tickets ALTER COLUMN fio SET NOT NULL;
 UPDATE book.tickets SET fio = 'no' WHERE fio is NULL;
 ALTER TABLE book.tickets ALTER COLUMN fio SET NOT NULL;
 EXPLAIN SELECT count(fio) FROM book.tickets;
 
 
-CREATE EXTENSION "uuid-ossp";
 \timing
+CREATE EXTENSION "uuid-ossp";
 CREATE TABLE records2 (id int8 not null, filler text);
 INSERT INTO records2 SELECT id, repeat(' ', 100) FROM generate_series(1, 10000000) id;
 
@@ -26,4 +27,14 @@ CREATE INDEX ON records3 (uuid_v4);
 
 SELECT COUNT(id) FROM records2;
 SELECT COUNT(uuid_v4) FROM records3;
+
+SELECT count(*) FROM pg_settings;
+
+
+
+https://github.com/jfcoz/postgresqltuner - чеклист
+
+
+
+
 
