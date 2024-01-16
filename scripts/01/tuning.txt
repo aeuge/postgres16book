@@ -31,10 +31,52 @@ SELECT COUNT(uuid_v4) FROM records3;
 SELECT count(*) FROM pg_settings;
 
 
+-- swapiness 60-> 1..10
+cat /proc/sys/vm/swappiness
+sysctl vm.swappiness
+-- онлайн изменение
+sudo sysctl vm.swappiness=1
+-- для созранения изменений
+sudo nano /etc/sysctl.conf
+vm.swappiness=1
 
-https://github.com/jfcoz/postgresqltuner - чеклист
+SELECT name, setting, short_desc FROM pg_settings WHERE name like '%page%';
 
+pgbench -i postgres
 
+pgbench -P 1 -T 10 postgres
+-- 900
 
+-- 10 клиентов
+pgbench -P 1 -c 10 -T 10 postgres
+-- 1200
 
+-- 4 потока по числу ядер
+pgbench -P 1 -c 10 -j 4 -T 10 postgres
+-- 1100
 
+atop
+htop
+
+cat > ~/workload.sql << EOL
+\set r random(1, 5000000) 
+SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = :r;
+EOL 
+
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload.sql -U postgres thai
+
+cat > ~/workload2.sql << EOL
+INSERT INTO book.tickets (fkRide, fio, contact, fkSeat)
+VALUES (
+	ceil(random()*100)
+	, (array(SELECT fam FROM book.fam))[ceil(random()*110)]::text || ' ' ||
+    (array(SELECT nam FROM book.nam))[ceil(random()*110)]::text
+    ,('{"phone":"+7' || (1000000000::bigint + floor(random()*9000000000)::bigint)::text || '"}')::jsonb
+    , ceil(random()*100));
+EOL
+
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 5432 thai
+
+psql -d thai -c "ALTER TABLE book.tickets ALTER COLUMN fio DROP NOT NULL;"
+
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 5432 thai
