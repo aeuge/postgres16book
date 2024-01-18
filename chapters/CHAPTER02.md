@@ -1,1 +1,1 @@
-# Коннектинг к PostgreSQL. Права пользователя
+# Connecting PostgreSQL. Users

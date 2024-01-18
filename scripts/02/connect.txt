@@ -1,0 +1,22 @@
+sudo DEBIAN_FRONTEND=noninteractive apt install -y pgbouncer
+
+sudo systemctl status pgbouncer
+
+sudo systemctl stop pgbouncer
+
+cat > temp.cfg << EOF 
+[databases]
+thai = host=127.0.0.1 port=5432 dbname=thai
+[pgbouncer]
+logfile = /var/log/postgresql/pgbouncer.log
+pidfile = /var/run/postgresql/pgbouncer.pid
+listen_addr = *
+listen_port = 6432
+#auth_type = md5
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+admin_users = admindb
+EOF
+cat temp.cfg | sudo tee -a /etc/pgbouncer/pgbouncer.ini
+
+
