@@ -19,4 +19,55 @@ admin_users = admindb
 EOF
 cat temp.cfg | sudo tee -a /etc/pgbouncer/pgbouncer.ini
 
+-- можем автоматизировать создае файлов пользователей /etc/pgbouncer/userlist.txt на всех 3х ВМ
+-- sudo -u postgres psql -Atq -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "SELECT concat('\"', usename, '\" \"', passwd, '\"') FROM pg_shadow" >> /tmp/userlist.txt && \
+-- sudo mv /tmp/userlist.txt /etc/pgbouncer/userlist.txt
 
+-- зададим список пользователей для доступа
+cat > temp2.cfg << EOF 
+"admindb" "md5a1edc6f635a68ce9926870fe752e8f2b"
+"postgres" "admin123#"
+EOF
+cat temp2.cfg | sudo tee -a /etc/pgbouncer/userlist.txt
+
+
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'admin123#';";
+sudo -u postgres psql -c "create user admindb with password 'md5a1edc6f635a68ce9926870fe752e8f2b';";
+
+-- чтобы не вводить пароль каждый раз
+echo "localhost:5432:thai:postgres:admin123#" | sudo tee -a /var/lib/postgresql/.pgpass && sudo chmod 600 /var/lib/postgresql/.pgpass && sudo chown postgres:postgres /var/lib/postgresql/.pgpass
+
+echo "listen_addresses = '*'" | sudo tee -a /etc/postgresql/16/main/postgresql.conf
+echo "host all all 10.0.0.0/8 scram-sha-256" | sudo tee -a /etc/postgresql/16/main/pg_hba.conf
+sudo pg_ctlcluster 16 main restart
+
+sudo systemctl enable pgbouncer 
+sudo systemctl start pgbouncer 
+
+sudo -u postgres psql -p 6432 -h 127.0.0.1 -d thai -U postgres
+
+-- if something wrong
+tail /var/log/postgresql/postgresql-15-main.log
+tail /var/log/postgresql/pgbouncer.log
+cat /etc/pgbouncer/pgbouncer.ini
+cat /etc/pgbouncer/userlist.txt
+cat /etc/postgresql/16/main/pg_hba.conf
+cat /etc/postgresql/16/main/postgresql.conf
+
+-- 1
+sudo su postgres
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload.sql -U postgres -p 5432 -h 127.0.0.1 thai
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload.sql -U postgres -p 6432 -h 127.0.0.1 thai
+
+-- 2
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 5432 -h 127.0.0.1 thai
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 6432 -h 127.0.0.1 thai
+
+psql -c "ALTER SYSTEM SET password_encryption = 'md5';"
+nano /etc/postgresql/16/main/pg_hba.conf -- scram-sha-256 -> md5
+psql -c "SELECT pg_reload_conf();"
+psql -c "ALTER USER admindb WITH PASSWORD 'admin123#';";
+nano /etc/pgbouncer/pgbouncer.ini -- scram-sha-256 -> md5
+psql -c "select usename,passwd from pg_shadow;"
+nano /etc/pgbouncer/userlist.txt -- password md5
+sudo systemctl restart pgbouncer 
