@@ -1,7 +1,7 @@
 # Настройка ВМ, ОС и PostgreSQL
-00 Мой github URL: https://github.com/aeuge/Postgres16book
-01 Docker URL: https://www.docker.com/ (дата обращения 05.01.2024)
-02 Что такое Kubernetes URL: https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/ (дата обращения 05.01.2024)
+00. Мой github URL: https://github.com/aeuge/Postgres16book
+01. Docker URL: https://www.docker.com/ (дата обращения 05.01.2024)
+02. Что такое Kubernetes URL: https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/ (дата обращения 05.01.2024)
 03 PostgreSQL 14. Оптимизация, Kubernetes, кластера, облака. - М.: ООО «Сам Полиграфист», 2022. - 576 с. URL: https://aristov.tech/PostgreSQL14preview.pdf (дата обращения 05.01.2024)
 04 SSD https://en.wikipedia.org/wiki/Solid-state_drive 
 05 NVMe https://en.wikipedia.org/wiki/NVM_Express 

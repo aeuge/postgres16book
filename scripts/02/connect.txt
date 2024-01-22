@@ -47,7 +47,7 @@ sudo systemctl start pgbouncer
 sudo -u postgres psql -p 6432 -h 127.0.0.1 -d thai -U postgres
 
 -- if something wrong
-tail /var/log/postgresql/postgresql-15-main.log
+tail /var/log/postgresql/postgresql-16-main.log
 tail /var/log/postgresql/pgbouncer.log
 cat /etc/pgbouncer/pgbouncer.ini
 cat /etc/pgbouncer/userlist.txt
