@@ -1,0 +1,258 @@
+-- TOAST
+CREATE TABLE toast_test (id SERIAL, value TEXT);
+SELECT relname, reltoastrelid FROM pg_class WHERE relname = 'toast_test';
+SELECT relname FROM pg_class WHERE oid = 16514;
+\d pg_toast.pg_toast_16514
+-- chunk_id: A reference to a toasted value.
+-- chunk_seq: A sequence within the chunk.
+-- chunk_data: The actual chunk data.
+
+select * from pg_class limit 1;
+
+SELECT
+    n.nspname || '.' || c.relname AS table_name,
+    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+    pg_size_pretty(pg_total_relation_size(c.reltoastrelid)) AS toast_size
+FROM pg_class c
+JOIN pg_namespace n
+    ON c.relnamespace = n.oid
+WHERE
+    relname = 'toast_test';
+
+INSERT INTO toast_test (value) VALUES ('small value');
+select * from pg_toast.pg_toast_16510;
+INSERT INTO toast_test (value) VALUES (repeat(' ', 4097));
+INSERT INTO toast_test (value) VALUES (repeat('s', 400097));
+-- WTF?
+-- автоматическое сжатие TEXT!!!!
+
+
+CREATE OR REPLACE FUNCTION generate_random_string(
+  length INTEGER,
+  characters TEXT default '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+) RETURNS TEXT AS
+$$
+DECLARE
+  result TEXT := '';
+BEGIN
+  IF length < 1 then
+      RAISE EXCEPTION 'Invalid length';
+  END IF;
+  FOR __ IN 1..length LOOP
+    result := result || substr(characters, floor(random() * length(characters))::int + 1, 1);
+  end loop;
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+INSERT INTO toast_test (value) VALUES (generate_random_string(1024 * 10));
+
+SELECT chunk_id, COUNT(*) as chunks, pg_size_pretty(sum(octet_length(chunk_data)::bigint))
+FROM pg_toast.pg_toast_16510 GROUP BY 1 ORDER BY 1;
+
+TRUNCATE toast_test;
+-- обратите внимание, транкейт вернул место!!!
+
+-- Postgres use LZ comperssion 
+-- https://doxygen.postgresql.org/pg__lzcompress_8c_source.html
+-- втсавим случайную строку из всего нескольких значений
+INSERT INTO toast_test (value) VALUES (generate_random_string(1024 * 10, '123'));
+
+SELECT chunk_id, COUNT(*) as chunks, pg_size_pretty(sum(octet_length(chunk_data)::bigint))
+FROM pg_toast.pg_toast_16510 GROUP BY 1 ORDER BY 1;
+
+
+-- Configuring TOAST
+-- toast_tuple_target: The minimum tuple length after which PostgreSQL tries to move long values to TOAST.
+-- storage: The TOAST strategy. PostgreSQL supports 4 different TOAST strategies. The default is EXTENDED, which means PostgreSQL will try to compress the value and store it out-of-line.
+-- https://www.postgresql.org/docs/current/storage-toast.html#STORAGE-TOAST-ONDISK
+
+-- !!!! update JSON в TOAST довольно медленный !!!
+-- https://habr.com/ru/companies/oleg-bunin/articles/597187/ 
+
+CREATE TABLE t AS
+SELECT i AS id, (SELECT jsonb_object_agg(j, j) FROM generate_series(1, 1000) j) js
+FROM generate_series(1, 10000) i;
+
+SELECT oid::regclass AS heap_rel,
+       pg_size_pretty(pg_relation_size(oid)) AS heap_rel_size,
+       reltoastrelid::regclass AS toast_rel,
+       pg_size_pretty(pg_relation_size(reltoastrelid)) AS toast_rel_size
+FROM pg_class WHERE relname = 't';
+
+-- Сама таблица будет занимать 512 Кб, а хранилище TOAST — 78 Мб. JSON будет 19 Кб, и он сжимается в 6 Кб, 
+-- которые займут 4 чанка в TOAST (чанки размером по 2 Кб). Дальше давайте проапдейтим колонку id — она маленькая, 
+-- находится отдельно и никогда не попадет в TOAST:
+\timing
+\d+ t
+SELECT pg_current_wal_lsn(); --> 0/1F96A060
+UPDATE t SET id = id + 1; -- 42 ms
+SELECT pg_current_wal_lsn(); --> 0/1FADE3B0
+SELECT pg_size_pretty(pg_wal_lsn_diff('0/1FADE3B0','0/1F96A060')) AS wal_size;
+
+-- Апдейт займет всего 37 мс, и WAL  будет всего 1,5 Мб, то есть 150 байт на запись. 
+-- При этом размер TOAST не изменится — как был 78 Мб, так и останется. И теперь давайте проапдейтим JSON:
+
+SELECT pg_current_wal_lsn(); --> 0/1FADE3B0
+UPDATE t SET js = js::jsonb || '{"a":1}'; -- 17316 ms (was 42 ms, ~500x slower)
+SELECT pg_current_wal_lsn(); --> 0/26818180
+SELECT pg_size_pretty(pg_wal_lsn_diff('0/26818180','0/1FADE3B0')) AS wal_size;
+
+-- Это займет 12 секунд, то есть станет в 300 раз медленней, а размер  WAL увеличится до 130 Мб вместо 1,5 Мб. 
+-- Хранилище TOAST соответственно увеличилось в 2 раза.  То есть, мы сделали маленький апдейт и у нас сразу же возникли проблемы. 
+SELECT oid::regclass AS heap_rel,
+       pg_size_pretty(pg_relation_size(oid)) AS heap_rel_size,
+       reltoastrelid::regclass AS toast_rel,
+       pg_size_pretty(pg_relation_size(reltoastrelid)) AS toast_rel_size
+FROM pg_class WHERE relname = 't';
+
+-- имеем распухание - bloating
+-- pluggable TOAST - комьюнити не приняло(
+-- https://habr.com/ru/companies/postgrespro/articles/710104/
+будет распухать до х4 - связано с механизмом хранения
+\d+ pg_toast.pg_toast_74512
+
+-- extended disk
+-- добавим 150 GB SSD - x1.5 IOPS
+
+lsblk
+sudo fdisk /dev/sdb
+-- Утилита fdisk встречает нас приветственным сообщением, далее нам необходимо указать ключ для создания нового -раздела. Укажем «n».
+n
+-- Далее нам надо выбрать тип нового раздела первичный(primary) или логический extended. Выбираем первичный.
+p
+-- Далее нам необходимо указать номер раздела укажем 1.
+1
+-- На этом шаге нам необходимо указать начало раздела, оставим по умолчанию и нажмем enter.
+-- First sector (2048-20971519, default 2048):
+enter
+-- Далее утилита предлагает нам выбрать окончание нового раздела, так же оставляем по умолчанию и нажимаем Enter.
+Enter
+-- создали диск
+-- Будет создан новый раздел размером 150 гигабайт. 
+-- Теперь нам необходимо сохранить раздел и выйти из утилиты, поэтому указываем ключ w и нажимаем Enter.
+w
+
+lsblk
+-- LVM
+sudo apt install lvm2
+
+-- Теперь создадим физический том (physical volume), 
+-- для этого воспользуемся утилитой pvcreate и укажем имя нашего нового раздела:
+sudo pvcreate /dev/sdb1
+sudo pvdisplay
+
+-- Добавим новую группу томов (VolumeGroupName), воспользуемся утилитой vgcreate, а группу томов назовем vol и укажем через пробел, 
+-- физический том. Если томов несколько, то их так же разделяем пробелом.
+sudo vgcreate vol /dev/sdb1
+sudo vgdisplay
+
+-- Как видим у нас появилась новая группа томов, с нашим физическим томом.
+sudo lsblk -o NAME,FSTYPE,LABEL,UUID,MOUNTPOINT
+
+-- Теперь нам осталось создать логический том в существующей группе томов, для этого предназначена 
+-- утилита lvcreate, чтобы создать логический том, максимального раздела команда будет выглядеть так:
+
+sudo lvcreate -l+100%FREE vol
+
+-- Имя нового раздела будет lvol0. Чтобы избежать путаницы изменим имя нашего раздела на newpostgre, применив команду:
+
+sudo lvrename /dev/vol/lvol0 /dev/vol/newpostgre 
+
+-- Отформатируем наш логический том, форматировать будем в файловую систему xfs. 
+-- Для этого выполним следующую команду.
+sudo mkfs.xfs -f /dev/vol/newpostgre
+
+-- Теперь давайте в корневом разделе создадим новую папку newpostgresss, к которой и примонтируем данный раздел.
+sudo mkdir -p /newpostgres
+
+-- теперь примонтируем раздел к папке
+sudo mount -o rw /dev/vol/newpostgre /newpostgres
+
+-- К сожалению операция монтирования действует, только до перезагрузки для того чтобы наш диск остался 
+-- примонтирован даже после перезагрузки, нам необходимо внести правки в файл fstab в каталоге etc.
+sudo nano /etc/fstab
+/dev/vol/newpostgre          /newpostgres                   xfs     defaults        0 0
+
+-- создадим кластер 
+sudo chown postgres:postgres /newpostgres
+sudo -u postgres mkdir /newpostgres/data
+sudo -u postgres pg_createcluster 16 main2 --datadir /newpostgres/data
+
+-- обратите внимание на каталог с логами
+pg_lsclusters
+sudo su postgres
+
+-- давайте тестить
+cd ~
+cat > ~/workload.sql << EOL
+
+\set r random(1, 6000000) 
+SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = :r;
+
+EOL
+------------------------------------
+
+cd ~ && wget https://storage.googleapis.com/thaibus/thai_small.tar.gz && tar -xf thai_small.tar.gz && psql < thai.sql
+
+-- for 16 PG
+/usr/lib/postgresql/16/bin/pgbench -c 1 -j 1 -T 10 -f ~/workload.sql -U postgres thai
+-- 12200
+
+-- 10 клиентов
+-- 4 потока по числу ядер
+/usr/lib/postgresql/16/bin/pgbench -c 10 -j 4 -T 10 -f ~/workload.sql -U postgres thai
+-- 28000
+
+-- для main2
+pg_ctlcluster 16 main2 start
+cd ~ && wget https://storage.googleapis.com/thaibus/thai_small.tar.gz && tar -xf thai_small.tar.gz && psql -p 5433 < thai.sql
+
+-- for 16 PG
+/usr/lib/postgresql/16/bin/pgbench -c 1 -j 1 -T 10 -f ~/workload.sql -p 5433 -U postgres thai
+-- 12700
+
+-- 10 клиентов
+-- 4 потока по числу ядер
+/usr/lib/postgresql/16/bin/pgbench -c 10 -j 4 -T 10 -f ~/workload.sql -p 5433 -U postgres thai
+-- 27400
+
+
+
+-- !!! перенос WAL файлов
+-- Убираем журнал транзакций на отдельный диск
+-- Сначала создайте новую директорию на диске, на который вы хотите переместить WAL файлы. Например:
+-- воспользуемся каталогов с тестов TS
+mkdir /newpostgres/wal
+
+pg_ctlcluster 16 main stop
+-- Имеет смысл размещать журналы WAL на другом диске, отличном от того, где находятся основные файлы базы данных. 
+-- Для этого можно переместить каталог pg_wal в другое место (разумеется, когда сервер остановлен) 
+-- и создать символическую ссылку из исходного места на перемещённый каталог.
+mv /var/lib/postgresql/16/main/pg_wal /newpostgres/wal
+ln -s /newpostgres/wal/pg_wal /var/lib/postgresql/16/main/pg_wal
+ls /newpostgres/wal/pg_wal
+ls /var/lib/postgresql/16/main/pg_wal
+
+pg_ctlcluster 16 main start
+
+
+-- Убедитесь, что новые WAL файлы действительно сохраняются в новой директории. 
+-- Мониторьте логи PostgreSQL и новую директорию, чтобы удостовериться, что перемещение происходит корректно.
+-- После внесения изменений, важно наблюдать за производительностью и обеспечивать регулярное резервное копирование файлов журналов транзакций.
+-- Также рекомендуется внимательно мониторить доступное место на диске, на котором хранятся WAL файлы, чтобы избежать исчерпания дискового пространства.
+
+-- даванем нагрузкой
+pgbench -i
+pgbench -P 1 -c 10 -j 4 -T 10 postgres
+
+psql
+\timing
+DROP TABLE IF EXISTS test;
+CREATE TABLE test(i int);
+INSERT INTO test SELECT s.id FROM generate_series(1,10000000) AS s(id);
+INSERT 0 10000000
+Time: 8429.056 ms (00:08.429)
+
+-- ускорились в 2 раза... но нет..
+ls -la /newpostgres/wal/pg_wal

@@ -41,6 +41,4 @@
 40. PERM https://habr.com/ru/articles/539778/ 
 41. TRO vs RPO https://www.druva.com/blog/understanding-rpo-and-rto 
 42. SLA https://www.techtarget.com/searchitchannel/definition/service-level-agreement 
-43. https://habr.com/ru/companies/astralinux/articles/707258/ 
-44. Pg_anon https://github.com/ismaelga/pg-anon 
 
