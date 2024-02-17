@@ -9,10 +9,9 @@
 08. LSN + WAL https://www.postgresql.org/docs/current/wal-internals.html 
 09. Ext4 https://en.wikipedia.org/wiki/Ext4 
 10. XFS https://www.ibm.com/docs/zh/linux-on-systems?topic=introduction-xfs-filesystem 
-11. ZFS https://en.wikipedia.org/wiki/ZFS 
-12. fdisk https://en.wikipedia.org/wiki/Fdisk 
-13. LVM https://habr.com/ru/articles/67283/ 
-14. https://loginom.ru/blog/symbolic-link 
+11. fdisk https://en.wikipedia.org/wiki/Fdisk 
+12. LVM https://habr.com/ru/articles/67283/ 
+13. https://loginom.ru/blog/symbolic-link 
 
 
 
