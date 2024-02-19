@@ -49,24 +49,25 @@
 47. old snapshot problem2 https://github.com/postgres/postgres/blob/REL_13_STABLE/src/backend/utils/time/snapmgr.c#L1808C33-L1808C33 
 48. https://dataegret.com/2018/04/lets-speed-things-up/ 
 49. cybertec конфигуратор https://pgconfigurator.cybertec.at/ 
-50. Tuning PostgreSQL https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server 
-51. Tuning PostgreSQL https://www.crunchydata.com/blog/optimize-postgresql-server-performance 
-52. Tuner https://github.com/jfcoz/postgresqltuner 
-53. Pool connector https://habr.com/ru/articles/194142/ 
-54. Pgbouncer https://www.pgbouncer.org/ 
-55. Pgbench https://www.postgresql.org/docs/current/pgbench.html 
-56. Tps & qps https://www.osp.ru/os/2017/02/13052225 
-57. Яндекс танк https://cloud.yandex.ru/ru/marketplace/products/yc/load-testing 
-58. Ab https://httpd.apache.org/docs/2.4/programs/ab.html 
-59. JMeter https://jmeter.apache.org/ 
-60. Sysbench https://en.wikipedia.org/wiki/Sysbench 
-61. Netperf https://hewlettpackard.github.io/netperf/ 
-62. Top https://manpages.ubuntu.com/manpages/xenial/man1/top.1.html 
-63. Atop https://linux.die.net/man/1/atop 
-64. Htop https://htop.dev/ 
-65. Perf https://man7.org/linux/man-pages/man1/perf-top.1.html 
-66. Grafana https://grafana.com/ 
-67. Huge pages in postgresql https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES 
-68. MVCC https://www.postgresql.org/docs/current/mvcc.html 
-69. Volatile https://www.postgresql.org/docs/current/xfunc-volatility.html 
+50. default settings https://github.com/aeuge/Postgres16book/blob/main/scripts/01/settings.txt 
+51. Tuning PostgreSQL https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server 
+52. Tuning PostgreSQL https://www.crunchydata.com/blog/optimize-postgresql-server-performance 
+53. Tuner https://github.com/jfcoz/postgresqltuner 
+54. Pool connector https://habr.com/ru/articles/194142/ 
+55. Pgbouncer https://www.pgbouncer.org/ 
+56. Pgbench https://www.postgresql.org/docs/current/pgbench.html 
+57. Tps & qps https://www.osp.ru/os/2017/02/13052225 
+58. Яндекс танк https://cloud.yandex.ru/ru/marketplace/products/yc/load-testing 
+59. Ab https://httpd.apache.org/docs/2.4/programs/ab.html 
+60. JMeter https://jmeter.apache.org/ 
+61. Sysbench https://en.wikipedia.org/wiki/Sysbench 
+62. Netperf https://hewlettpackard.github.io/netperf/ 
+63. Top https://manpages.ubuntu.com/manpages/xenial/man1/top.1.html 
+64. Atop https://linux.die.net/man/1/atop 
+65. Htop https://htop.dev/ 
+66. Perf https://man7.org/linux/man-pages/man1/perf-top.1.html 
+67. Grafana https://grafana.com/ 
+68. Huge pages in postgresql https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES 
+69. MVCC https://www.postgresql.org/docs/current/mvcc.html 
+70. Volatile https://www.postgresql.org/docs/current/xfunc-volatility.html 
 
