@@ -1,26 +1,25 @@
 -- replica
+-- settings https://pgconfigurator.cybertec.at/
+
 -- поднимаем синхронную реплику - тестируем
 -- 1 node
 sudo su postgres 
-cd ~
-nano /etc/postgresql/16/main/postgresql.conf
-listen_addresses = '10.128.0.60'
--- sudo pg_conftool 16 main13 set listen_addresses '*' - с адресом НЕ работает !!! кавычек не ставит и не воспринимается
+-- толко внутренняя VPS
+cat >> /etc/postgresql/16/main/postgresql.conf << EOL
+listen_addresses = '10.128.15.199'
+EOL
 cat >> /etc/postgresql/16/main/pg_hba.conf << EOL
 host replication replicator 10.128.0.0/16 scram-sha-256
 EOL
 pg_ctlcluster 16 main restart
+psql -c "DROP DATABASE IF EXISTS thai;"
+cd ~
 wget https://storage.googleapis.com/thaibus/thai_medium.tar.gz && tar -xf thai_medium.tar.gz && psql < thai.sql
 psql -c "CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD 'secret$123';"
 psql -c "SELECT pg_create_physical_replication_slot('test');"
 
 -- 2 cluster
 sudo su postgres
--- format hostname:port:database:username:password and supports wildcards, so you can just set the database to "*" for example.
-cat >> ~/.pgpass << EOL
-postgres4:5432:*:replicator:secret$123
-EOL
-chmod 0600 ~/.pgpass
 
 pg_ctlcluster 16 main stop
 rm -rf /var/lib/postgresql/16/main
