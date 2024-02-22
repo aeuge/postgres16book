@@ -10,11 +10,11 @@
 09. Pg_probackup https://github.com/postgrespro/pg_probackup 
 10. Wal-g https://github.com/wal-g/wal-g 
 11. Pg_backrest https://pgbackrest.org/ 
-12. Disaster recovey https://en.wikipedia.org/wiki/Disaster_recovery 
+12. Disaster recovery https://en.wikipedia.org/wiki/Disaster_recovery 
 13. High availability https://aerospike.com/glossary/high-availability-database/ 
 14. SLA https://www.techtarget.com/searchitchannel/definition/service-level-agreement 
 15. Calc SLA http://shootnick.ru/uptime/ 
-16. PG replication by percona https://www.percona.com/blog/postgresql-synchronous_commit-options-and-synchronous-standby-replication/ 
+16. PG replication by Percona https://www.percona.com/blog/postgresql-synchronous_commit-options-and-synchronous-standby-replication/ 
 17. Synchronous_commit https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-SYNCHRONOUS-COMMIT 
 18. Internal VPC https://en.wikipedia.org/wiki/Virtual_private_cloud 
 19. default settings https://github.com/aeuge/Postgres16book/blob/main/scripts/01/settings.txt 
