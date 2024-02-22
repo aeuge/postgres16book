@@ -25,11 +25,12 @@ pg_ctlcluster 16 main stop
 rm -rf /var/lib/postgresql/16/main
 pg_basebackup -h postgres4 -p 5432 -U replicator -R -S test -D /var/lib/postgresql/16/main
 -- 1 cluster 
--- set max_wal_senders=2 
-nano /etc/postgresql/16/main/postgresql.conf
+cat >> /etc/postgresql/16/main/postgresql.conf << EOL
+max_wal_senders=2 
+EOL
 -- pg_ctlcluster 16 main reload - не сработает(
 pg_ctlcluster 16 main restart 
-
+psql -c "ALTER USER replicator WITH PASSWORD 'secret\$123';"
 
 cat > ~/workload2.sql << EOL
 INSERT INTO book.tickets (fkRide, fio, contact, fkSeat)
@@ -39,28 +40,28 @@ VALUES (
     (array(SELECT nam FROM book.nam))[ceil(random()*110)]::text
     ,('{"phone":"+7' || (1000000000::bigint + floor(random()*9000000000)::bigint)::text || '"}')::jsonb
     , ceil(random()*100));
-
 EOL
 ------------------------------------
--- for 16 PG
 /usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 5432 thai
 
 -- start 2
 pg_ctlcluster 16 main start
 2023-08-16 09:57:54.727 UTC [12147] FATAL:  recovery aborted because of insufficient parameter settings
 2023-08-16 09:57:54.727 UTC [12147] DETAIL:  max_wal_senders = 0 is a lower setting than on the primary server, where its value was 2.
-nano /etc/postgresql/16/main/postgresql.conf
+
+cat >> /etc/postgresql/16/main/postgresql.conf << EOL
+max_wal_senders=2 
+EOL
+pg_ctlcluster 16 main start 
+pg_lsclusters
 
 psql -d thai -c "select pg_is_in_recovery();"
-
-psql -d thai -c "select count(*) from book.tickets;"
+/usr/lib/postgresql/16/bin/pgbench -c 8 -j 4 -T 10 -f ~/workload2.sql -U postgres -p 5432 thai
 
 
 cat > ~/workload.sql << EOL
-
 \set r random(1, 5000000) 
 SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = :r;
-
 EOL
 ------------------------------------
 -- for 16 PG
@@ -68,36 +69,27 @@ EOL
 
 
 -- 1 server
-https://postgresqlco.nf/doc/en/param/synchronous_standby_names/
+-- https://postgresqlco.nf/doc/en/param/synchronous_standby_names/
 psql
+SHOW synchronous_commit;
 ALTER SYSTEM SET synchronous_commit='remote_apply';
 pg_ctlcluster 16 main restart
 
 ALTER SYSTEM SET  synchronous_standby_names ='postgres4r';
-%)
 SELECT * FROM pg_stat_replication \gx
-DETAIL:  The transaction has already committed locally, but might not have been replicated to the standby.
+
 
 show cluster_name;
 
-ALTER SYSTEM SET  synchronous_standby_names ="postgres4r.us-central1-a.c.celtic-house-266612.internal";
-
--- client_hostname увидели...
--- но не работает...
+-- 2 node
 nano ~/16/main/postgresql.auto.conf
 application_name=postgres4r
--- уот так уот
+pg_ctlcluster 16 main restart 
 
-
-tps = 4477.279696, а был 6500 .. но в дальнейшем..
--- кворум можно настроить для репликации
--- https://wiki.postgresql.org/wiki/New_in_postgres_10#Quorum_Commit_for_Synchronous_Replication
-
-
+-- 1 node
 ALTER SYSTEM SET synchronous_commit='local';
+pg_ctlcluster 16 main restart 
 
 -- переключаем в асинхронную - тестируем
 ALTER SYSTEM SET synchronous_commit='off';
-
--- проверим, что данные доехали
-psql -d thai -c "select count(*) from book.tickets;"
+pg_ctlcluster 16 main restart 
