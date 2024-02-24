@@ -1,81 +1,6 @@
-gcloud beta compute --project=celtic-house-266612 instances create postgres4 --zone=us-central1-a --machine-type=e2-standard-4 --subnet=default --network-tier=PREMIUM --maintenance-policy=MIGRATE --service-account=933982307116-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=100GB --boot-disk-type=pd-ssd --boot-disk-device-name=postgres4 --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any
-
-gcloud compute ssh postgres4
-
-sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y && sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add - && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt -y install postgresql-15 unzip atop iotop
-
-sudo su postgres
- 
-cat >> /etc/postgresql/15/main/postgresql.conf << EOL
-shared_buffers = '4096 MB'
-work_mem = '32 MB'
-maintenance_work_mem = '320 MB'
-huge_pages = off
-effective_cache_size = '11 GB'
-effective_io_concurrency = 100 # concurrent IO only really activated if OS supports posix_fadvise function
-random_page_cost = 1.1 # speed of random disk access relative to sequential access (1.0)
-
-# Monitoring
-shared_preload_libraries = 'pg_stat_statements'    # per statement resource usage stats
-track_io_timing=on        # measure exact block IO times
-track_functions=pl        # track execution times of pl-language procedures if any
-
-# Replication
-wal_level = replica		# consider using at least 'replica'
-max_wal_senders = 0
-synchronous_commit = on
-
-# Checkpointing: 
-checkpoint_timeout  = '15 min' 
-checkpoint_completion_target = 0.9
-max_wal_size = '1024 MB'
-min_wal_size = '512 MB'
-
-# WAL writing
-wal_compression = on
-wal_buffers = -1    # auto-tuned by Postgres till maximum of segment size (16MB by default)
-wal_writer_delay = 200ms
-wal_writer_flush_after = 1MB
-
-# Background writer
-bgwriter_delay = 200ms
-bgwriter_lru_maxpages = 100
-bgwriter_lru_multiplier = 2.0
-bgwriter_flush_after = 0
-
-# Parallel queries: 
-max_worker_processes = 4
-max_parallel_workers_per_gather = 2
-max_parallel_maintenance_workers = 2
-max_parallel_workers = 4
-parallel_leader_participation = on
-
-# Advanced features 
-enable_partitionwise_join = on 
-enable_partitionwise_aggregate = on
-jit = on
-max_slot_wal_keep_size = '1000 MB'
-track_wal_io_timing = on
-maintenance_io_concurrency = 100
-EOL
-
-pg_ctlcluster 15 main stop && pg_ctlcluster 15 main start
-
-
--- !!! Мгновенный мониторинг !!!
-sudo htop 
-sudo atop
-sudo iotop 
--- общая нагрузка
-sudo iotop -oba -d 3 -n 2 -qq
--- диск
-sudo iostat -x
--- сеть
-sudo iftop
-
+sudo apt install -y pgtop
 -- pgtop
 -- 2 окно
-gcloud compute ssh postgres4
 sudo -u postgres psql
 CREATE TABLE test(i int);
 INSERT INTO test SELECT s.id FROM generate_series(1,1000000000) AS s(id);
@@ -110,20 +35,17 @@ ORDER BY runtime DESC;
 
 
 -- ТОП по загрузке CPU:
-CREATE EXTENSION pg_stat_statements;
-
 SELECT pid, xact_start, now() - xact_start AS duration 
 FROM pg_stat_activity 
-WHERE state LIKE '%transaction%' 
+WHERE state LIKE '%active%' 
 ORDER BY duration DESC;
 
-alter system set shared_preload_libraries = 'pg_stat_statements';
-
+-- использование pg_stat_statements
+CREATE EXTENSION pg_stat_statements;
+ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';
 exit
-
-sudo pg_ctlcluster 15 main restart
-
-sudo -u postgres psql
+pg_ctlcluster 16 main restart
+psql
 show shared_preload_libraries;
 
 SELECT * FROM  pg_stat_statements;
@@ -141,34 +63,14 @@ SELECT substring(query, 1, 50) AS short_query, round(total_exec_time::numeric, 2
 FROM pg_stat_statements
 ORDER BY avg_time DESC LIMIT 20;
 
-EXPLAIN SELECT substring(query, 1, 50) AS short_query, round(total_exec_time::numeric, 2) AS total_time,
-	calls, rows, round(total_exec_time::numeric / calls, 2) AS avg_time,
-	round((100 * total_exec_time / sum(total_exec_time::numeric) OVER ())::numeric, 2) AS percentage_cpu
-FROM pg_stat_statements
-ORDER BY avg_time DESC LIMIT 20;
-
--- Вспоминаем про представление pg_stat_user_tables.
--- Большое зло - «последовательное чтение» больших таблиц!
-
--- Посмотрим, используя запрос:
 SELECT schemaname, relname, seq_scan, seq_tup_read, seq_tup_read / seq_scan AS avg, idx_scan
 FROM pg_stat_user_tables
 WHERE seq_scan > 0
 ORDER BY seq_tup_read DESC
 LIMIT 25;
 
--- Сверху этого запроса и будут таблицы, в которых больше всего операций последовательного чтения.
--- Они будут подозрительны для анализа причин отсутствующих индексов.
-
-
-
-
--- !!! Continous monitoring!!!
--- grafana + prometheus
--- или отдельный инстанс или докер или кубик
 
 -- PMM
--- https://docs.percona.com/percona-monitoring-and-management/index.html#read-more
 curl -fsSL https://www.percona.com/get/pmm | /bin/bash
 
 htop
@@ -179,7 +81,7 @@ htop
 sudo -u postgres psql -c "CREATE TABLE test(i int);"
 sudo -u postgres psql -c "INSERT INTO test SELECT s.id FROM generate_series(1,1000000000) AS s(id);"
 
-sudo ls -la /var/lib/postgresql/15/main/pg_wal
+sudo ls -la /var/lib/postgresql/16/main/pg_wal
 
 sudo su postgres
 pgbench -i -s 1000 postgres
@@ -216,15 +118,15 @@ GRANT pg_monitor to pmm;
 
 -- Создадим расширение для мониторинга
 -- pg_stat_statements - устарело
-sudo percona-release setup ppg15
-sudo apt-get install percona-pg-stat-monitor15
+sudo percona-release setup ppg16
+sudo apt-get install percona-pg-stat-monitor16
 sudo -u postgres psql
 ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_monitor';
 ALTER SYSTEM SET track_io_timing = on;
 
 CREATE EXTENSION pg_stat_monitor;
 
-sudo pg_ctlcluster 15 main restart
+sudo pg_ctlcluster 16 main restart
 
 -- Putting database under monitoring
 sudo pmm-admin add postgresql --username=pmm --password=pmm123pmm pgtest
@@ -245,16 +147,7 @@ select * from test;
 exit
 
 sudo DEBIAN_FRONTEND=noninteractive apt install -y pgbadger lynx
-tail /var/log/postgresql/postgresql-15-main.log
-pgbadger /var/log/postgresql/postgresql-15-main.log
+tail /var/log/postgresql/postgresql-16-main.log
+pgbadger /var/log/postgresql/postgresql-16-main.log
 lynx out.html
-
--- perf
--- Инструмент преобразования текста в график
--- https://habr.com/ru/companies/postgrespro/articles/720272/
-
-
-gcloud compute instances delete postgres4
-
-
 
