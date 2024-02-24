@@ -77,42 +77,31 @@ htop
 -- под капотом клик + виктория метрикс)
 -- Yandex browser not supported
 
--- дадим нагрузку
-sudo -u postgres psql -c "CREATE TABLE test(i int);"
-sudo -u postgres psql -c "INSERT INTO test SELECT s.id FROM generate_series(1,1000000000) AS s(id);"
-
-sudo ls -la /var/lib/postgresql/16/main/pg_wal
-
 sudo su postgres
 pgbench -i -s 1000 postgres
 
 pgbench -P 1 -c 10 -j 4 -T 10 postgres
--- и не видим...
 
+
+exit
 sudo docker exec -it pmm-server bash
 psql -h localhost -U postgres
 \du
 SELECT * FROM information_schema.table_privileges WHERE grantee = 'postgres' LIMIT 10;
 
--- нужен еще и клиент
--- https://habr.com/ru/articles/694724/
--- https://www.josip-pojatina.com/en/postgres-monitoring-with-percona-pmm/
+exit
 wget https://repo.percona.com/apt/percona-release_latest.generic_all.deb && sudo dpkg -i ./percona-release_latest.generic_all.deb && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt install -y pmm2-client postgresql-contrib
 
 sudo pmm-admin --version
 
--- сбросить первоначальный пароль admin/admin
--- https://34.135.172.153/graph/login
+https://35.223.139.169/graph/login
 
--- зарегаем клиента
-sudo pmm-admin config --server-insecure-tls --server-url=https://admin:admin123$@127.0.0.1:443
--- Failed to register pmm-agent on PMM Server: Post "https://[admin:admin123127.0.0.1:443]:443/v1/management/Node/Register"
 
--- экранируем спецсимволы
-sudo pmm-admin config --server-insecure-tls --server-url=https://admin:admin123\$@127.0.0.1:443
+sudo pmm-admin config --server-insecure-tls --server-url=https://admin:admin$123@127.0.0.1:443
+
+sudo pmm-admin config --server-insecure-tls --server-url=https://admin:admin\$123@127.0.0.1:443
 
 sudo -u postgres psql
--- НЕ суперюзер
 CREATE USER pmm with password 'pmm123pmm';
 GRANT pg_monitor to pmm;
 
@@ -134,20 +123,3 @@ sudo pmm-admin add postgresql --username=pmm --password=pmm123pmm pgtest
 sudo pmm-admin list
 
 sudo pmm-admin remove postgresql pgtest
-
--- сервис "Онлайн-кинотека" с дополнительным мониторингом, используя инструмент PMM
-https://github.com/aeuge/pmm-database-project
-
-
--- профилирование
-alter system set log_min_duration_statement = 0;
-select pg_reload_conf();
-show log_min_duration_statement;
-select * from test;
-exit
-
-sudo DEBIAN_FRONTEND=noninteractive apt install -y pgbadger lynx
-tail /var/log/postgresql/postgresql-16-main.log
-pgbadger /var/log/postgresql/postgresql-16-main.log
-lynx out.html
-
