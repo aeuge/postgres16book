@@ -44,6 +44,5 @@
 43. Логирование https://www.postgresql.org/docs/current/runtime-config-logging.html 
 44. Syslog && degradation https://superuser.com/questions/305029/why-is-syslog-so-much-slower-than-file-io 
 45. pgaudit https://www.pgaudit.org/ 
-46. dalibo/pg_activity https://github.com/dalibo/pg_activity 
-47. cyanaudit https://pgxn.org/dist/cyanaudit/ 
-48. pgMemento https://github.com/pgMemento/pgMemento 
+46. cyanaudit https://pgxn.org/dist/cyanaudit/ 
+47. pgMemento https://github.com/pgMemento/pgMemento 
