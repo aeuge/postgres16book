@@ -1,0 +1,211 @@
+-- MVCC
+-- обратите внимание, что в psql и GUI всегда по умолчанию включен автокоммит - ЛЮБАЯ операция оборачивается в транзакцию
+-- кроме работы с БД - создание/удаление/альтер/подключение
+\echo :AUTOCOMMIT
+-- \set AUTOCOMMIT OFF
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test(i int);
+SELECT txid_current();
+INSERT INTO test VALUES (100),(200);
+
+BEGIN;
+INSERT INTO test VALUES (300);
+INSERT INTO test VALUES (400);
+COMMIT;
+
+SELECT * FROM test;
+SELECT xmin,xmax,cmin,cmax,ctid FROM test;
+
+CREATE VIEW deadratio as 
+SELECT  relname, 
+        n_live_tup, 
+        n_dead_tup, 
+        trunc(100*n_dead_tup/(n_live_tup+1))::float "ratio%", 
+        last_autovacuum 
+FROM pg_stat_user_tables 
+WHERE relname = 'test';
+
+SELECT * FROM deadratio;
+UPDATE test set i = 301 WHERE i = 300;
+
+-- посмотрим что теперь
+SELECT * FROM test;
+SELECT * FROM deadratio;
+
+SELECT xmin,xmax,cmin,cmax,ctid FROM test;
+
+
+-- установим расширение для доступа к бинарым данным
+-- https://www.postgresql.org/docs/current/pageinspect.html
+CREATE EXTENSION pageinspect;
+\dx+
+SELECT lp as tuple, t_xmin, t_xmax, t_field3 as t_cid, t_ctid 
+FROM heap_page_items(get_raw_page('test',0));
+
+tuple | t_xmin | t_xmax | t_cid | t_ctid
+-------+--------+--------+-------+--------
+    3 |    748 |    749 |     0 | (0,5)
+-- ctid (0,5) - 0 это номер страницы, 5 - позиция следующей живой записи
+
+
+-- чтобы достать хранимые данные, нужно заморочиться побитным сдвигом...
+SELECT  lp as tuple, 
+        t_xmin, 
+        t_xmax, 
+        t_field3 as t_cid, 
+        t_ctid, 
+        get_byte(t_data, 0)::bigint as byte0, 
+        get_byte(t_data, 1) as byte1, 
+        get_byte(t_data, 2) as byte2, 
+        get_byte(t_data, 3) as byte3,
+        get_byte(t_data, 0)::bigint + get_byte(t_data, 1)*2^8  + get_byte(t_data, 2)*2^16  + get_byte(t_data, 3)*2^24 as value
+FROM heap_page_items(get_raw_page('test',0));
+
+SELECT * FROM heap_page_items(get_raw_page('test',0)) \gx
+
+SELECT '(0,'||lp||')' AS ctid,
+       CASE lp_flags
+         WHEN 0 THEN 'unused'
+         WHEN 1 THEN 'normal'
+         WHEN 2 THEN 'redirect to '||lp_off
+         WHEN 3 THEN 'dead'
+       END AS state,
+       t_xmin as xmin,
+       t_xmax as xmax,
+       (t_infomask & 256) > 0  AS xmin_commited,
+       (t_infomask & 512) > 0  AS xmin_aborted,
+       (t_infomask & 1024) > 0 AS xmax_commited,
+       (t_infomask & 2048) > 0 AS xmax_aborted,
+       t_ctid
+FROM heap_page_items(get_raw_page('test',0)) \gx
+VACUUM test;
+
+-- как узнать номер страницы с данными по ctid
+-- https://dba.stackexchange.com/questions/65964/how-do-i-decompose-ctid-into-page-and-row-numbers
+SELECT (ctid::text::point)[0]::int                              --  25 ms
+     , right(split_part(ctid::text, ',', 1), -1)::int           --  28 ms
+     , ltrim(split_part(ctid::text, ',', 1), '(')::int          --  29 ms
+     , (translate(ctid::text,'()', '{}')::int[])[1]             --  45 ms
+     , (replace(replace(ctid::text,'(','{'),')','}')::int[])[1] --  51 ms
+     , substring(right(ctid::text, -1), '^\d+')::int            --  52 ms
+     , substring(ctid::text, '^\((\d+),')::int                  -- 143 ms
+FROM   test;
+
+-- Буферный кеш
+-- проверим размер кеша
+SHOW shared_buffers;
+SELECT setting, unit FROM pg_settings WHERE name = 'shared_buffers'; 
+
+-- уменьшим количество буферов для наблюдения
+ALTER SYSTEM SET shared_buffers = 300;
+
+-- рестартуем кластер после изменений
+pg_ctlcluster 16 main restart
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test(i int);
+
+-- сгенерируем значения
+INSERT INTO test SELECT s.id FROM generate_series(1,150) AS s(id); 
+SELECT * FROM test LIMIT 5;
+
+-- создадим расширение для просмотра кеша
+CREATE EXTENSION pg_buffercache; 
+
+CREATE VIEW pg_buffercache_v AS
+SELECT bufferid,
+       (SELECT c.relname FROM pg_class c WHERE  pg_relation_filenode(c.oid) = b.relfilenode ) relname,
+       CASE relforknumber
+         WHEN 0 THEN 'main'
+         WHEN 1 THEN 'fsm'
+         WHEN 2 THEN 'vm'
+       END relfork,
+       relblocknumber,
+       isdirty,
+       usagecount
+FROM   pg_buffercache b
+WHERE  b.relDATABASE IN (    0, (SELECT oid FROM pg_DATABASE WHERE datname = current_database()) )
+AND    b.usagecount is not null;
+
+SELECT * FROM pg_buffercache_v WHERE relname='test';
+
+SELECT * FROM test limit 5;
+
+UPDATE test set i = 2 WHERE i = 1;
+
+-- увидим грязную страницу
+SELECT * FROM pg_buffercache_v WHERE relname='test';
+
+INSERT INTO test VALUES (222);
+
+-- сделаем чекпойнт
+checkpoint;
+
+-- увидим страницу в кеше, но она будет уже чистой
+SELECT * FROM pg_buffercache_v WHERE relname='test';
+
+
+-- даст пищу для размышлений над использованием кеша -- usagecount > 3
+SELECT c.relname,
+  count(*) blocks,
+  round( 100.0 * 8192 * count(*) / pg_TABLE_size(c.oid) ) "% of rel",
+  round( 100.0 * 8192 * count(*) FILTER (WHERE b.usagecount > 3) / pg_TABLE_size(c.oid) ) "% hot"
+FROM pg_buffercache b
+  JOIN pg_class c ON pg_relation_filenode(c.oid) = b.relfilenode
+WHERE  b.relDATABASE IN (
+         0, (SELECT oid FROM pg_DATABASE WHERE datname = current_database())
+       )
+AND    b.usagecount is not null
+GROUP BY c.relname, c.oid
+ORDER BY 2 DESC
+LIMIT 10;
+
+-- bgwriter
+SELECT name, setting, unit FROM pg_settings WHERE name like 'bgwriter%'; 
+-- Статистика bgwriter
+SELECT * FROM pg_stat_bgwriter \gx
+
+SELECT * FROM pg_stat_checkpointer;
+
+-- Контрольные точки 
+-- посмотрим информацию о кластере
+-- /usr/lib/postgresql/16/bin/pg_controldata /var/lib/postgresql/16/main/
+
+SELECT pg_current_wal_insert_lsn();
+CHECKPOINT;
+SELECT pg_current_wal_insert_lsn();
+
+-- посмотрим какой у нас wal file
+SELECT pg_walfile_name('0/160B938');
+\! /usr/lib/postgresql/16/bin/pg_waldump -p /var/lib/postgresql/16/main/pg_wal -s 0/160B850 -e 0/160B938 000000010000000000000001
+
+
+
+-- тюнинг WAL
+\timing 
+\d+ test
+TRUNCATE test;
+INSERT INTO test SELECT s.id FROM generate_series(1,10000000) AS s(id);
+INSERT 0 10000000
+Time: 7675.553 ms (00:07.676)
+
+show min_wal_size;
+show wal_keep_size;
+show max_slot_wal_keep_size;
+show max_wal_size;
+show wal_segment_size;
+
+\! ls -la /var/lib/postgresql/16/main/pg_wal
+-- итого 32 сегмента по 16мб
+-- https://www.postgresql.org/docs/current/app-pgresetwal.html
+nano /etc/postgresql/16/main/postgresql.conf
+
+-- поменяем размер WAL файлов
+pg_ctlcluster 16 main stop
+-- tail /var/log/postgresql/postgresql-15-main.log
+/usr/lib/postgresql/16/bin/pg_resetwal -f -D /var/lib/postgresql/16/main --wal-segsize=64
+
+pg_ctlcluster 16 main start
+/usr/lib/postgresql/16/bin/pg_resetwal -f -D /var/lib/postgresql/16/main --wal-segsize=8
+
