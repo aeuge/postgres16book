@@ -184,17 +184,10 @@ SELECT pg_walfile_name('0/160B938');
 
 -- тюнинг WAL
 \timing 
-\d+ test
 TRUNCATE test;
 INSERT INTO test SELECT s.id FROM generate_series(1,10000000) AS s(id);
 INSERT 0 10000000
-Time: 7675.553 ms (00:07.676)
-
-show min_wal_size;
-show wal_keep_size;
-show max_slot_wal_keep_size;
-show max_wal_size;
-show wal_segment_size;
+Time: 15719.725 ms (00:15.720)
 
 \! ls -la /var/lib/postgresql/16/main/pg_wal
 -- итого 32 сегмента по 16мб
@@ -202,10 +195,10 @@ show wal_segment_size;
 nano /etc/postgresql/16/main/postgresql.conf
 
 -- поменяем размер WAL файлов
+-- tail /var/log/postgresql/postgresql-16-main.log
 pg_ctlcluster 16 main stop
--- tail /var/log/postgresql/postgresql-15-main.log
 /usr/lib/postgresql/16/bin/pg_resetwal -f -D /var/lib/postgresql/16/main --wal-segsize=64
-
 pg_ctlcluster 16 main start
+
 /usr/lib/postgresql/16/bin/pg_resetwal -f -D /var/lib/postgresql/16/main --wal-segsize=8
 
