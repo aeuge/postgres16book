@@ -1,0 +1,177 @@
+-- VACUUM
+BEGIN;
+SELECT * FROM test LIMIT 1;
+
+UPDATE test set i = 600 WHERE i = 1;
+
+SELECT * FROM deadratio;
+
+-- 2 Window
+sudo -u postgres psql -c "VACUUM FULL test;"
+
+sudo -u postgres psql -c "VACUUM test;"
+
+
+-- 3 эксперимент
+-- 1 terminal
+BEGIN;
+UPDATE test set i = 600 WHERE i = 2;
+
+
+-- 2 terminal
+VACUUM test;
+
+-- 1 terminal
+commit;
+SELECT * FROM heap_page_items(get_raw_page('test',0)) \gx
+
+VACUUM test;
+SELECT * FROM heap_page_items(get_raw_page('test',0)) \gx
+
+-- автовакуум
+SELECT name, setting, context, short_desc FROM pg_settings WHERE category like '%Autovacuum%';
+
+-- первый показатель показывает приближение проблемы
+-- второй показывает когда запустится автоматический автофриз
+-- https://www.crunchydata.com/blog/managing-transaction-id-wraparound-in-postgresql
+WITH max_age AS ( 
+    SELECT 2000000000 as max_old_xid
+        , setting AS autovacuum_freeze_max_age 
+        FROM pg_catalog.pg_settings 
+        WHERE name = 'autovacuum_freeze_max_age' )
+, per_database_stats AS ( 
+    SELECT datname
+        , m.max_old_xid::int
+        , m.autovacuum_freeze_max_age::int
+        , age(d.datfrozenxid) AS oldest_current_xid 
+    FROM pg_catalog.pg_database d 
+    JOIN max_age m ON (true) 
+    WHERE d.datallowconn ) 
+SELECT max(oldest_current_xid) AS oldest_current_xid
+    , max(ROUND(100*(oldest_current_xid/max_old_xid::float))) AS percent_towards_wraparound
+    , max(ROUND(100*(oldest_current_xid/autovacuum_freeze_max_age::float))) AS percent_towards_emergency_autovac 
+FROM per_database_stats;
+
+
+
+SELECT datname
+    , age(datfrozenxid)
+    , current_setting('autovacuum_freeze_max_age') 
+FROM pg_database 
+ORDER BY 2 DESC;
+
+-- посмотрим маскимальный возраст для наших таблиц
+SELECT c.oid::regclass as table_name,
+       greatest(age(c.relfrozenxid),age(t.relfrozenxid)) as age
+FROM pg_class c
+LEFT JOIN pg_class t ON c.reltoastrelid = t.oid
+WHERE c.relkind IN ('r', 'm');
+
+
+
+
+
+-- !!! work_mem !!!
+-- автовакуум / мертвые таплы
+show work_mem;
+\d+ test
+SELECT relname, n_live_tup, n_dead_tup, trunc(100*n_dead_tup/(n_live_tup+1))::float "ratio%", last_autovacuum 
+FROM pg_stat_user_tables WHERE relname = 'test';
+-- и не видим вставленных миллионов %)
+SELECT pg_relation_filepath('test');
+
+\! ls -l /var/lib/postgresql/16/main/base/5 | grep 16436
+
+-- погенерируем и посмотрим на память
+INSERT INTO test SELECT s.id FROM generate_series(1,1000000000) AS s(id);
+
+-- по факту пошли в тем тейбл спейс и пошли тратить диск
+\! ls -la /var/lib/postgresql/16/main/base/pgsql_tmp
+
+-- https://www.postgresql.org/docs/current/runtime-config-resource.html
+show temp_file_limit;
+-- установим на сессию
+set temp_file_limit=100;
+
+-- work_mem по факту использует тот же механизм при превышении лимита
+set work_mem=64;
+set temp_file_limit=1;
+SELECT * FROM test ORDER by i desc;
+
+-- вернем настройку по умолчанию
+set temp_file_limit=-1;
+
+-- причем в WAL файл генерация значений попадает после окончания транзакции - сразу с десяток файлов)
+
+SELECT relname, n_live_tup, n_dead_tup, trunc(100*n_dead_tup/(n_live_tup+1))::float "ratio%", last_autovacuum 
+FROM pg_stat_user_tables WHERE relname = 'test';
+
+update test set i = i + 1;
+
+
+
+-- Блокировки
+-- посмотрим на мультитранзакции
+-- https://pganalyze.com/blog/5mins-postgres-multiXact-ids-foreign-keys-performance
+DROP TABLE IF EXISTS test;
+CREATE TABLE test(i int);
+INSERT INTO test VALUES (100);
+
+-- 1 window
+BEGIN;
+SELECT * from test;
+
+
+-- 2 window
+BEGIN;
+SELECT * from test;
+
+-- 3 window
+gcloud compute ssh postgres4
+sudo -u postgres psql
+select * from pg_locks;
+
+-- не выполним(
+vacuum full;
+
+SELECT lp as tuple, t_xmin, t_xmax, t_field3 as t_cid, t_ctid FROM heap_page_items(get_raw_page('test',0));
+
+-- 1
+-- or update not key value
+select * from test FOR SHARE;
+
+
+--2 
+select * from test FOR SHARE;
+
+SELECT lp as tuple, t_xmin, t_xmax, t_field3 as t_cid, t_ctid FROM heap_page_items(get_raw_page('test',0));
+
+SELECT next_multixact_id FROM pg_control_checkpoint();
+
+-- более жесткий пример
+DROP TABLE IF EXISTS test_text; CREATE TABLE test_text(i serial, t text);
+INSERT INTO test_text(t) SELECT 'string '||s.id FROM generate_series(1,100000) AS s(id); 
+
+begin;
+select * from test_text FOR SHARE;
+
+
+SELECT lp as tuple, t_xmin, t_xmax, t_field3 as t_cid, t_ctid FROM heap_page_items(get_raw_page('test_text',0)) limit 10;
+
+/var/lib/postgresql/16/main/pg_multixact/members
+ls - la 
+cat 0000
+
+-- варианты
+SELECT * FROM test_text FOR UPDATE NOWAIT; -- ошибка и возвращает управление без ожидания
+SELECT * FROM test_text FOR UPDATE SKIP LOCKED;
+
+-- FK
+-- https://shiroyasha.io/selecting-for-share-and-update-in-postgresql.html
+
+-- https://www.postgresql.org/docs/current/explicit-locking.html
+
+
+
+
+
