@@ -98,23 +98,6 @@ INSERT INTO test SELECT s.id FROM generate_series(1,1000000000) AS s(id);
 
 -- https://www.postgresql.org/docs/current/runtime-config-resource.html
 show temp_file_limit;
--- установим на сессию
-set temp_file_limit=100;
-
--- work_mem по факту использует тот же механизм при превышении лимита
-set work_mem=64;
-set temp_file_limit=1;
-SELECT * FROM test ORDER by i desc;
-
--- вернем настройку по умолчанию
-set temp_file_limit=-1;
-
--- причем в WAL файл генерация значений попадает после окончания транзакции - сразу с десяток файлов)
-
-SELECT relname, n_live_tup, n_dead_tup, trunc(100*n_dead_tup/(n_live_tup+1))::float "ratio%", last_autovacuum 
-FROM pg_stat_user_tables WHERE relname = 'test';
-
-update test set i = i + 1;
 
 
 
