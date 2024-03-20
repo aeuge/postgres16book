@@ -1,0 +1,331 @@
+-- schema
+-- полнотекстовый поиск + индекс
+DROP TABLE IF EXISTS test_fts;
+CREATE TABLE test_fts(t text, t_ts tsvector);
+INSERT INTO test_fts VALUES ('год'),('погода'),('годзилла'),('погода годная'),('худая мышь'),('худые мышки'),('худые кролики и крольчихи'),('кролик пятнистый'),('полосатые кролики');
+UPDATE test_fts SET t_ts = to_tsvector('russian', t);
+CREATE INDEX idx2 ON test_fts USING GIN (t_ts);
+
+EXPLAIN
+SELECT count(*)
+FROM test_fts
+WHERE t_ts @@ to_tsquery('год');
+
+SELECT count(*)
+FROM test_fts
+WHERE t_ts @@ to_tsquery('год');
+
+SELECT ctid, t, t_ts FROM test_fts;
+
+SELECT (unnest(t_ts)).lexeme, count(*) FROM test_fts GROUP BY 1 ORDER BY 2 desc;
+
+-- результат разбора на дефолтном английском языке
+SELECT ctid, t, to_tsvector(t); FROM test_fts;
+
+
+-- более правильный вариант без создания дополнительного поля
+-- не нужно поддерживать актуальность доп поля - но если и делать, то генерируемое
+-- не нужно тратить дополнительное место на хранение лексем - они и так будут храниться в индексе
+CREATE INDEX idx ON test_fts USING GIN (to_tsvector('russian',t));
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('год');
+
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('погода');
+
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('мышь');
+-- почему не нашли погоду и мышь?
+
+-- необходимо указывать правильный язык при разборе на лексемы!
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('russian','погода');
+
+EXPLAIN
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('russian','мышь');
+
+-- поиск по неполному совпадению
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('russian','год:*');
+
+
+-- помним , что индекс не используется, так как данных слишком мало
+EXPLAIN
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('russian', 'год');
+
+-- установим огромную стоимость секскан
+SET enable_seqscan = OFF;
+EXPLAIN
+SELECT count(*)
+FROM test_fts
+WHERE to_tsvector('russian',t) @@ to_tsquery('russian', 'год');
+-- видим, что индекс используется
+
+
+-- посмотрим на реальном примере
+show enable_seqscan;
+\c thai
+show enable_seqscan;
+
+\dt
+SHOW search_path;
+\dt+ book.*
+
+\timing
+\d+ book.tickets
+SELECT *
+FROM book.tickets
+WHERE to_tsvector('english',fio) @@ to_tsquery('english','arsen')
+LIMIT 1;
+
+-- дорого, так как нужно разложить текст в вектор
+-- 6sec
+SELECT count(*) 
+FROM book.tickets
+WHERE to_tsvector('english',fio) @@ to_tsquery('english','arsen');
+
+--1,3 sec
+SELECT count(*)
+FROM book.tickets
+WHERE fio ilike '%arsen%';
+
+-- попытаемся ускориться - Арсен в конце и в верхнем регистре (не факт, что так везде будет)
+--0,3 
+SELECT count(*)
+FROM book.tickets
+WHERE fio like '%ARSEN';
+
+-- посмотрим 2 варианта - функциональный индекс или like
+CREATE INDEX ft_idx ON book.tickets USING GIN (to_tsvector('english',fio));
+-- ERROR:  functions in index expression must be marked IMMUTABLE
+-- потому что при разных настройках может быть вызвана функция с разным языком
+-- 20 sec
+CREATE INDEX ft_idx ON book.tickets USING GIN (to_tsvector('english',fio));
+
+-- 46 ms
+SELECT count(*)
+FROM book.tickets
+WHERE to_tsvector('english',fio) @@ to_tsquery('english','arsen');
+
+-- 4.5sec
+CREATE INDEX ft_idx3 ON book.tickets(fio);
+
+-- 1.1 sec - index not GOOD work when %%
+SELECT count(*)
+FROM book.tickets
+WHERE fio ilike '%arsen%';
+
+-- посмотрим на поиск с конца
+EXPLAIN SELECT count(*)
+FROM book.tickets
+WHERE fio ilike '%arsen';
+
+SELECT count(*)
+FROM book.tickets
+WHERE fio ilike '%arsen';
+
+-- размер индексов
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'tickets%';
+
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'ft%';
+
+
+-- ilike - регистронезависимый поиск
+-- лучше сделать индекс
+CREATE INDEX ft_idx5 ON book.tickets(lower(fio));
+
+SELECT count(*)
+FROM book.tickets
+WHERE fio like lower('%arsen%');
+-- почему 0 в поиске?
+
+-- lower не туда применили
+SELECT count(*)
+FROM book.tickets
+WHERE lower(fio) like '%arsen%';
+
+
+
+
+-- текстовое поле как первичный ключ
+-- классика - телефон как ПК
+https://www.db-fiddle.com/f/3XPzSaEsoLZhtCW3qhR4wX/2
+
+-- текстовое поле как первичный ключ
+-- классика - телефон как ПК
+-- 1кк записей
+\timing
+CREATE TABLE test as 
+SELECT '7' || (1000000000::bigint + floor(random()*9000000000)::bigint)::text as id
+	, generate_series::text || (random() * 10)::text as col2 
+FROM generate_series(1, 1000000);
+CREATE INDEX idx_test_id on test(id);
+~ 2 sec
+
+DROP TABLE if exists test2;
+
+CREATE TABLE test2 as 
+SELECT ('7' || (1000000000::bigint + floor(random()*9000000000)::bigint))::bigint as id
+	, generate_series::text || (random() * 10)::text as col2 
+FROM generate_series(1, 1000000);
+CREATE INDEX idx_test2_id on test2(id);
+
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'idx%';
+
+-- 100 к FK
+DROP TABLE if exists test_fk;
+CREATE TABLE test_fk
+(
+    id INT PRIMARY KEY,
+    fk_id TEXT REFERENCES test(id), 
+    col2 TEXT
+);
+ERROR:  there is no unique constraint matching given keys for referenced table "test"
+
+DROP INDEX idx_test_id;
+CREATE UNIQUE INDEX idx_test_id on test(id);
+-- Key (id)=(71830426439) is duplicated.
+
+-- удалим дубликаты
+DELETE FROM test a
+    USING test b
+WHERE a.col2 < b.col2
+    and a.id = b.id;
+
+CREATE UNIQUE INDEX idx_test_id on test(id);
+CREATE TABLE test_fk
+(
+    id INT PRIMARY KEY,
+    fk_id TEXT REFERENCES test(id), 
+    col2 TEXT
+);
+
+-- 14 sec on 100k !!!
+INSERT INTO test_fk
+SELECT generate_series::int,
+(array(SELECT id FROM test))[ceil(random()*100000)]::text as fk_id
+	, generate_series::text || (random() * 20)::text as col2 
+FROM generate_series(1, 100000);
+
+CREATE INDEX idx_test_fk_id2 on test_fk(fk_id);
+
+-- bigint
+DROP TABLE if exists test2_fk;
+DROP INDEX idx_test2_id;
+-- удалим дубликаты
+DELETE FROM test2 a
+    USING test2 b
+WHERE a.col2 < b.col2
+    and a.id = b.id;
+
+CREATE UNIQUE INDEX idx_test2_id ON test2(id);
+CREATE TABLE test2_fk
+(
+    id INT PRIMARY KEY,
+    fk_id bigint REFERENCES test2(id), 
+    col2 TEXT
+);
+
+-- 0.86 sec on 100k !!! - 20x++
+INSERT INTO test2_fk
+SELECT generate_series::int,
+(array(SELECT id FROM test2))[ceil(random()*100000)]::bigint as fk_id
+	, generate_series::text || (random() * 20)::text as col2 
+from generate_series(1, 100000);
+
+CREATE INDEX idx_test2_fk_id2 on test2_fk(fk_id);
+
+
+-- explain
+SELECT * FROM test_fk LIMIT 1;
+SELECT * FROM test2_fk LIMIT 1;
+
+
+-- размеры данных и индексов
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'test%';
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'idx%';
+
+-- посмотрим скорость работы
+SELECT a.id, b.col2
+FROM test a
+JOIN test_fk b
+on a.id=b.fk_id
+LIMIT 1;
+
+SELECT a.id, b.col2
+FROM test2 a
+JOIN test2_fk b
+on a.id=b.fk_id
+LIMIT 1;
+
+-- усложним задачу
+SELECT a.id, count(b.col2) as c
+FROM test a
+JOIN test_fk b
+on a.id=b.fk_id
+GROUP BY a.id
+ORDER BY c
+LIMIT 1;
+
+SELECT a.id, count(b.col2) as c
+FROM test2 a
+JOIN test2_fk b
+on a.id=b.fk_id
+GROUP BY a.id
+ORDER BY c
+LIMIT 1;
+
+-- а уж совсем круто JSON как ПК) - вспоминаем про тосты
+
+-- теперь ускоримся и заменим суррогатным ключом
+DROP TABLE if exists test3;
+CREATE TABLE test3 as 
+SELECT generate_series::int as id
+    ,'7' || (1000000000::bigint + floor(random()*9000000000)::bigint)::text as id2
+	, generate_series::text || (random() * 10)::text as col2 
+FROM generate_series(1, 1000000);
+-- никаких проблем с уникальностью
+CREATE UNIQUE INDEX idx_test3_id on test3(id);
+
+CREATE TABLE test3_fk
+(
+    id INT PRIMARY KEY,
+    fk_id int REFERENCES test3(id), 
+    col2 TEXT
+);
+-- 0.7 sec
+INSERT INTO test3_fk
+SELECT generate_series::int,
+(array(SELECT id FROM test3))[ceil(random()*100000)]::int as fk_id
+	, generate_series::text || (random() * 20)::text as col2 
+FROM generate_series(1, 100000);
+
+CREATE INDEX idx_test3_fk_id2 on test3_fk(fk_id);
+
+-- x2+++
+SELECT a.id, count(b.col2) as c
+FROM test3 a
+JOIN test3_fk b
+ON a.id=b.fk_id
+GROUP BY a.id
+ORDER BY c
+LIMIT 1;
+
+-- размеры данных и индексов
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'test%';
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'idx%';
+\dt+
+
+DROP INDEX idx_test3_fk_id2;
+
+
+
