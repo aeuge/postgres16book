@@ -1,0 +1,244 @@
+-- сайд эффект рандома
+psql -d thai
+\timing
+select floor(random()*5000000) as r \gset
+\echo :r
+SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = :r;
+
+SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = floor(random()*5000000);
+   id    | fkride |      fio       |          contact          | fkseat
+---------+--------+----------------+---------------------------+--------
+  674871 | 103825 | VLASOV MARYAM  | {"phone": "+74275419139"} |     16
+ 4116828 |  62023 | STEPANOV MURAD | {"phone": "+79194823817"} |     96
+(2 rows)
+
+\sf+ random
+        CREATE OR REPLACE FUNCTION pg_catalog.random()
+         RETURNS double precision
+         LANGUAGE internal
+         PARALLEL RESTRICTED STRICT
+1       AS $function$drandom$function$
+
+
+
+-- Попробуем выполнить запрос 1 миллион раз, на разных языках разница будет заметней:
+-- На PL/pgSQL:
+
+DO $$
+     DECLARE a int; i int;
+     BEGIN FOR i IN 0..999999 LOOP
+          SELECT count(*) INTO a FROM pg_class;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+53s
+
+--- На PL/Python 3:
+DO $$
+     for i in range (0,1000000) :
+          plpy.execute('SELECT count(*) FROM pg_class')
+$$ LANGUAGE plpython3u;
+98s
+
+-- В PL/Python можно явно работать с планами запросов. Например, так:
+
+DO $$
+     h = plpy.prepare('SELECT count(*) FROM pg_class')
+     for i in range (0,1000000): 
+           plpy.execute(h)
+$$ LANGUAGE plpython3u;
+62s
+
+
+-- Демо по оптимизации запросов
+-- задача - составить список поездок, сколько всего было мест в автобусе и сколько было занято
+psql -d thai
+\timing
+-- список таблиц
+\dt+ book.*
+
+\d+ book.ride
+-- Построим список рейсов:
+SELECT id
+FROM book.ride
+limit 10;
+
+-- Добавим дату рейса без времени:
+SELECT id, startdate as depart_date
+FROM book.ride
+limit 10;
+
+-- Добавим басстейшн выезда и отсортируем по дате выезда:
+SELECT r.id, r.startdate as depart_date, bs.city || ', ' || bs.name
+FROM book.ride r
+JOIN book.schedule as s
+      on r.fkschedule = s.id
+JOIN book.busroute br
+      on s.fkroute = br.id
+JOIN book.busstation bs
+      on br.fkbusstationfrom = bs.id
+ORDER BY r.startdate
+limit 10;
+
+-- Посчитаем количество проданных билетов:
+SELECT r.id, 
+       r.startdate as depart_date, 
+       bs.city || ', ' || bs.name as busstation, 
+       count(t.id)
+FROM book.ride r
+JOIN book.schedule as s
+      on r.fkschedule = s.id
+JOIN book.busroute br
+      on s.fkroute = br.id
+JOIN book.busstation bs
+      on br.fkbusstationfrom = bs.id
+JOIN book.tickets t
+      on t.fkride = r.id
+GROUP BY r.id, 
+         r.startdate, 
+         bs.city || ', ' || bs.name
+ORDER BY r.startdate
+limit 10;
+
+-- Видим, что наши запросы начинают выполняться всё дольше и дольше.
+
+-- Посчитаем ещё и вместимость и, используя EXPLAIN ANALYZE, посмотрим на время выполнения запроса, 
+-- посчитаем cost и посмотрим, что вообще происходит внутри:
+EXPLAIN ANALYZE
+SELECT r.id, r.startdate as depart_date, bs.city || ', ' || bs.name as busstation, count(t.id) as order_place, count(st.id) as all_place
+FROM book.ride r
+JOIN book.schedule as s
+      on r.fkschedule = s.id
+JOIN book.busroute br
+      on s.fkroute = br.id
+JOIN book.busstation bs
+      on br.fkbusstationfrom = bs.id
+JOIN book.tickets t
+      on t.fkride = r.id
+JOIN book.seat st
+      on r.fkbus = st.fkbus
+GROUP BY r.id, r.startdate, bs.city || ', ' || bs.name
+ORDER BY r.startdate
+limit 10;
+-- 20 sec
+-- Видим просто фантастическую стоимость и итоговое количество строк для анализа!
+
+-- вариант с вложенными зависимыми подзапросами
+EXPLAIN 
+SELECT r.id, r.startdate as depart_date, bs.city || ', ' || bs.name as busstation, 
+(SELECT count(t.id) FROM book.tickets t WHERE t.fkride = r.id ) as order_place, 
+(SELECT count(st.id) FROM book.seat st WHERE r.fkbus = st.fkbus)  as all_place
+FROM book.ride r
+JOIN book.schedule as s
+      on r.fkschedule = s.id
+JOIN book.busroute br
+      on s.fkroute = br.id
+JOIN book.busstation bs
+      on br.fkbusstationfrom = bs.id
+GROUP BY r.id, r.startdate, bs.city || ', ' || bs.name
+ORDER BY r.startdate
+limit 10;
+
+-- 20 -> 2
+
+-- вариант с двумя СТЕ:
+-- EXPLAIN
+WITH all_place AS (
+    SELECT count(s.id) as all_place, s.fkbus as fkbus
+    FROM book.seat s
+    group by s.fkbus
+),
+order_place AS (
+    SELECT count(t.id) as order_place, t.fkride
+    FROM book.tickets t
+    group by t.fkride
+)
+SELECT r.id, r.startdate as depart_date, bs.city || ', ' || bs.name as busstation,  
+      count(t.order_place) as order_place, count(st.all_place) as all_place
+FROM book.ride r
+JOIN book.schedule as s
+      on r.fkschedule = s.id
+JOIN book.busroute br
+      on s.fkroute = br.id
+JOIN book.busstation bs
+      on br.fkbusstationfrom = bs.id
+JOIN order_place t
+      on t.fkride = r.id
+JOIN all_place st
+      on r.fkbus = st.fkbus
+GROUP BY r.id, r.startdate, bs.city || ', ' || bs.name
+ORDER BY r.startdate
+limit 10;
+
+-- 20 -> 0.8
+
+-- еще СТЕ
+-- camelCase
+-- EXPLAIN
+WITH allPlaces AS (
+    SELECT count(s.id) as allPlaces, s.fkbus as fkbus
+    FROM book.seat s
+    group by s.fkbus
+),
+orderPlaces AS (
+    SELECT count(t.id) as orderPlaces, t.fkride
+    FROM book.tickets t
+    group by t.fkride
+),
+busstationName AS (
+      SELECT s.id as id, bs.city || ', ' || bs.name as busstation
+      FROM book.schedule as s
+      JOIN book.busRoute br
+            on s.fkroute = br.id
+      JOIN book.busStation bs
+            on br.fkbusstationFrom = bs.id
+)
+SELECT r.id, r.startdate as departDate, bs.busstation as busstation,  
+      count(t.orderPlaces) as orderPlaces, count(st.allPlaces) as allPlaces
+FROM book.ride r
+JOIN busstationName bs
+      on bs.id = r.fkschedule
+JOIN orderPlaces t
+      on t.fkride = r.id
+JOIN allPlaces st
+      on r.fkbus = st.fkbus
+GROUP BY r.id, r.startdate, bs.busstation
+ORDER BY r.startdate
+limit 10;
+
+-- то же самое, глянем EXPLAIN
+-- планировщик за нас уже все сделал)
+
+-- а если без сортировки
+WITH allPlaces AS (
+    SELECT count(s.id) as allPlaces, s.fkbus as fkbus
+    FROM book.seat s
+    group by s.fkbus
+),
+orderPlaces AS (
+    SELECT count(t.id) as orderPlaces, t.fkride
+    FROM book.tickets t
+    group by t.fkride
+),
+busstationName AS (
+      SELECT s.id as id, bs.city || ', ' || bs.name as busstation
+      FROM book.schedule as s
+      JOIN book.busRoute br
+            on s.fkroute = br.id
+      JOIN book.busStation bs
+            on br.fkbusstationFrom = bs.id
+)
+SELECT r.id, r.startdate as departDate, bs.busstation as busstation,  
+      count(t.orderPlaces) as orderPlaces, count(st.allPlaces) as allPlaces
+FROM book.ride r
+JOIN busstationName bs
+      on bs.id = r.fkschedule
+JOIN orderPlaces t
+      on t.fkride = r.id
+JOIN allPlaces st
+      on r.fkbus = st.fkbus
+GROUP BY r.id, r.startdate, bs.busstation
+limit 10;
+
+-- 0.5 sec
+
