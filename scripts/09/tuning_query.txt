@@ -17,7 +17,7 @@ SELECT id, fkRide, fio, contact, fkSeat FROM book.tickets WHERE id = floor(rando
          RETURNS double precision
          LANGUAGE internal
          PARALLEL RESTRICTED STRICT
-1       AS $function$drandom$function$
+       AS $function$drandom$function$
 
 
 
@@ -154,7 +154,7 @@ order_place AS (
     group by t.fkride
 )
 SELECT r.id, r.startdate as depart_date, bs.city || ', ' || bs.name as busstation,  
-      count(t.order_place) as order_place, count(st.all_place) as all_place
+      t.order_place, st.all_place
 FROM book.ride r
 JOIN book.schedule as s
       on r.fkschedule = s.id
@@ -166,7 +166,7 @@ JOIN order_place t
       on t.fkride = r.id
 JOIN all_place st
       on r.fkbus = st.fkbus
-GROUP BY r.id, r.startdate, bs.city || ', ' || bs.name
+GROUP BY r.id, r.startdate, bs.city || ', ' || bs.name, t.order_place,st.all_place
 ORDER BY r.startdate
 limit 10;
 
@@ -194,7 +194,7 @@ busstationName AS (
             on br.fkbusstationFrom = bs.id
 )
 SELECT r.id, r.startdate as departDate, bs.busstation as busstation,  
-      count(t.orderPlaces) as orderPlaces, count(st.allPlaces) as allPlaces
+      t.orderPlaces, st.allPlaces
 FROM book.ride r
 JOIN busstationName bs
       on bs.id = r.fkschedule
@@ -202,9 +202,10 @@ JOIN orderPlaces t
       on t.fkride = r.id
 JOIN allPlaces st
       on r.fkbus = st.fkbus
-GROUP BY r.id, r.startdate, bs.busstation
+GROUP BY r.id, r.startdate, bs.busstation, t.orderPlaces, st.allPlaces
 ORDER BY r.startdate
 limit 10;
+
 
 -- то же самое, глянем EXPLAIN
 -- планировщик за нас уже все сделал)
@@ -229,7 +230,7 @@ busstationName AS (
             on br.fkbusstationFrom = bs.id
 )
 SELECT r.id, r.startdate as departDate, bs.busstation as busstation,  
-      count(t.orderPlaces) as orderPlaces, count(st.allPlaces) as allPlaces
+      t.orderPlaces, st.allPlaces
 FROM book.ride r
 JOIN busstationName bs
       on bs.id = r.fkschedule
@@ -237,7 +238,7 @@ JOIN orderPlaces t
       on t.fkride = r.id
 JOIN allPlaces st
       on r.fkbus = st.fkbus
-GROUP BY r.id, r.startdate, bs.busstation
+GROUP BY r.id, r.startdate, bs.busstation, t.orderPlaces, st.allPlaces
 limit 10;
 
 -- 0.5 sec
