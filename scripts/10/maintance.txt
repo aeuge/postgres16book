@@ -43,17 +43,17 @@ rollback;
 EOL
 
 ------------------------------------
-DROP DATABASE thai;
+psql -c "DROP DATABASE thai;"
 cd ~ && wget https://storage.googleapis.com/thaibus/thai_medium.tar.gz && tar -xf thai_medium.tar.gz && psql < thai.sql
 
--- for 16 PG
+-- в 1 клиента в 1 поток
 /usr/lib/postgresql/16/bin/pgbench -c 1 -j 1 -T 10 -f ~/workload.sql -U postgres thai
 -- 7500
 
 -- посмотрим на влияние оборачивания селекта в транзакцию
--- for 16 PG - должно быть в 2 раза меньше 
+-- должно быть в 2 раза меньше 
 /usr/lib/postgresql/16/bin/pgbench -c 1 -j 1 -T 10 -f ~/workload2.sql -U postgres thai
--- 5500
+-- 3500
 
 !!!! commit VS autocommit VS rollback
 
@@ -117,13 +117,6 @@ with overridden_tables as (
 SELECT *
 FROM per_database;
 
--- при использовании AND в WHERE довольно сложный механизм использования битовой маски и джойном индексов
--- может есть смысл делать составной индекс или джойнится с СТЕ при наличии независимых полей
--- https://www.postgresql.org/docs/current/indexes-bitmap-scans.html
-
--- !! REINDEX CONCURRENTLY
--- желательно вообще отключать на время загрузки больших объемов
-
 -- посмотреть блоатинг(раздутость) индекса
 psql -c "drop database if exists index_bloat;"
 psql -c "create database index_bloat;"
@@ -131,8 +124,8 @@ pgbench -i -s 10 index_bloat
 psql index_bloat -c "CREATE EXTENSION pgstattuple;"
 psql index_bloat -c "\d+ pgbench_accounts";
 psql index_bloat -c "SELECT * FROM pgstatindex('pgbench_accounts_pkey');"
-psql index_bloat -c "update pgbench_accounts set bid = bid + 2000000;"
-psql index_bloat -c "update pgbench_accounts set aid = aid + 2000000;"
+psql index_bloat -c "UPDATE pgbench_accounts set bid = bid + 2000000;"
+psql index_bloat -c "UPDATE pgbench_accounts set aid = aid + 2000000;"
 psql index_bloat
 SELECT relname, n_live_tup, n_dead_tup, trunc(100*n_dead_tup/(n_live_tup+1))::float "ratio%", last_autovacuum FROM pg_stat_user_TABLEs WHERE relname = 'pgbench_accounts';
 VACUUM pgbench_accounts;
@@ -143,14 +136,14 @@ SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
 
 REINDEX INDEX CONCURRENTLY pgbench_accounts_pkey;
 -- и снова обновим все записи и посмотрим что будет
-update pgbench_accounts set bid = bid + 2000000;
-update pgbench_accounts set aid = aid + 2000000;
+UPDATE pgbench_accounts set bid = bid + 2000000;
+UPDATE pgbench_accounts set aid = aid + 2000000;
 SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
 VACUUM pgbench_accounts;
-update pgbench_accounts set bid = bid + 2000000;
+UPDATE pgbench_accounts set bid = bid + 2000000;
 SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
 VACUUM pgbench_accounts;
-update pgbench_accounts set aid = aid + 2000000;
+UPDATE pgbench_accounts set aid = aid + 2000000;
 SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
 VACUUM pgbench_accounts;
 SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
@@ -164,7 +157,7 @@ SELECT * FROM pgstatindex('pgbench_accounts_pkey') \gx
 -- проверим тайминги при перестроении большого мат.вью на 60 млн.записей
 -- https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html
 \timing
-create materialized view ms as select * from book.tickets;
+REFRESH MATERIALIZED VIEW ms as SELECT * from book.tickets;
 -- 70s
 
 -- посмотрим нагрузку из другого сеанса
@@ -174,7 +167,7 @@ htop
 --sudo -u postgres psql -d thai
 
 
-select * from ms limit 1;
+SELECT * FROM ms limit 1;
 
 
 -- index unique on MAT VIEW!!!
@@ -184,149 +177,26 @@ CREATE UNIQUE INDEX ui ON ms(id);
 -- во 2 экране видим параллельное создание индексов
 
 
-refresh materialized view CONCURRENTLY ms WITH DATA;
+REFRESH MATERIALIZED VIEW CONCURRENTLY ms WITH DATA;
 -- во 2 окне видим CREATE MATVIEW !!! - в 1 поток !!! - еще и ядра переключаются !!!
 -- 383s !!!!
 
-refresh materialized view CONCURRENTLY ms WITH NO DATA;
+REFRESH MATERIALIZED VIEW CONCURRENTLY ms WITH NO DATA;
 -- ERROR:  CONCURRENTLY and WITH NO DATA options cannot be used together
-refresh materialized view ms WITH NO DATA;
+REFRESH MATERIALIZED VIEW ms WITH NO DATA;
 -- 1.3 s !!!!
-select count(*) from ms;
--- ERROR:  materialized view "ms" has not been populated
+SELECT count(*) from ms;
+-- ERROR:  MATERIALIZED VIEW "ms" has not been populated
 -- а данных то и нет )))
-refresh materialized view ms;
+REFRESH MATERIALIZED VIEW ms;
 -- 104s !!!
-create materialized view ms2 as select * from book.tickets;
+REFRESH MATERIALIZED VIEW ms2 as SELECT * from book.tickets;
 -- 63
-drop materialized view ms;
+DROP MATERIALIZED VIEW ms;
 -- 1.4s
-alter materialized view ms2 rename to ms;
+ALTER MATERIALIZED VIEW ms2 rename to ms;
 -- 1s
--- но в 1 случае у нас же еще индекс был...
-refresh materialized view ms WITH NO DATA;
--- 60s
--- как то так
 
 
--- чеклисты для проверки
--- что с архитектурой (железо)
-  -- ЦПУ, Память, дисковые подсистемы, сеть
-  -- HT, NUMA
--- ВМ/докер/кубер
--- ОС
--- swapiness
--- vm.dirty_*ratio
--- vm.overcommit_memory / vm.overcommit_ratio / vm.nr_overcommit_hugepages
--- Huge pages
--- Transparent Huge Pages
--- ПГ
-shared_buffers
-max_connections
-effective_cache_size
-work_mem
-maintenance_work_mem
-wal_buffers
-min_wal_size / max_wal_size
-checkpoint_timeout
-synchronous_commit
-random_page_cost
-effective_io_concurrency
-max_worker_processes / max_parallel_workers_per_gather
-max_parallel_maintenance_workers/ max_parallel_workers
--- если много коннектов - рассмотреть варианты пулинга
--- что с архитектурой и балансировкой нагрузки
--- что с фейловером/фейлбеком
--- включен ли pg_rewind
--- какая ролевая модель выбрана
--- что у нас с ХП
--- подход к триггерам
--- используется ли pg_anon или аналог
-
--- технологии хранения
--- архитектура решения
--- проверка нагрузочным тестированием
--- разные ТП под таблицы, валы, логи
--- может имеет смысл монтировать ТП в память для индексов, мат.вью, статистики (c 14 версии неактуально)
--- вместо RAID для NVMe просто отказоустойчивую реплику
--- ?noatime?, nobarier 
--- fsync 
--- размер Pg_class
--- что у нас с batch insert/update
--- используется ли секционирование - макс. размер 32Тб, принцип скользящего окна (log - 12 месяцев, log_a - остальное)
-
--- бэкапы и репликация
--- бэкап со слейва
--- проверка бэкапа на восстановление (вариант подсчета количества записей на момент бекапа и восстановления)
--- снепшот не бэкап
--- вариант использования Data Domain
--- что с расписанием бэкапов и какой метод
--- не забываем удалять старые бэкапы - retension policy
--- предусмотрен ли DR
--- какой уровень из 5 выбран для синхронного коммита
--- на каком уровне применяем транзакция, сессия, БД, юзер
--- нужен ли нам PITR
-
--- мониторинг
--- обязательно прометей (виктория) с графаной
--- Минимально рекомендую мониторить: ЦПУ, память, диски, сеть, лаг репликации, свободное место, размеры WAL файлов, 
--- возраст записей/таблиц для аварийной заморозки, количество сессий, TPS, долгие запросы, temp_files, дедлоки, 
--- постоянно ли работают все автовакуум воркеры
--- Максимально описано в 5 лекции
--- !!! алертинг !!!
-
--- WAL
--- уровень синхронности
--- уровень сжатия
--- количество слотов репликации
--- уровень журнала
--- объем генерации за чекпойнт
--- модет есть смысл увеличить размер WAL файлов
--- отключить init_zero
--- рассмотреть возможность выноса на отдельный диск (учиывать сетевые задержки) - желательно вообще протестировать точку монтирования
--- тюним контрольную точку/bgwriter в зависимости от задач
-
--- Vacuum
--- поагрессивнее
--- помним про Transaction ID wraparound
--- мониторим возраст таблиц
--- помним про выделение work_mem
--- собираем и актуализируем статистику
-
--- Locks
--- отслеживаем дедлоки
--- мониторим общее количество блокировок
-
--- схема данных
--- чеклист по индексам https://github.com/aeuge/db_converter/tree/master/packets/dba_idx_diag
--- и общий пакет проверок https://github.com/aeuge/db_converter/tree/master/packets 
--- внещний ключ на текстовое поле
--- используем индексы исходя из запросов
--- убираем неиспользуемые индексы
--- добавляем новые по потребности
--- используем индексы на внешние ключи исходя из анализа запросов
--- не забываем обслуживать индексы
--- проверяем типы полей
--- DEFAULT, особенно если использует тяжелую функцию + вирт.колонка
--- триггеры
--- помним что база в облаке не ваша (Валерий (с))
-
--- оптимизация запросов
--- проверям seqscan
--- статистику
--- мб автоексплейн
-
--- Обслуживание
--- прогноз роста БД и свободного места
--- топ таблиц с динамикой роста (помним по 32Тб)
--- блоат индексов/тостов/данных
--- когда последний раз приходил автовакуум
--- int4 capacity
--- и многое другое
-
-
--- Необходимо создать/использовать имеющийся инструмент замера производительности по профилю нагрузки 
--- (скрипты в pgbench с основными  запросами/или чисто синтетика(хуже вариант), JMETER и аналоги). 
--- Соответственно при тюнинге мы будем видеть конкретные цифры и можем от них отталкиваться и прогнозировать нагрузку.
 
 
