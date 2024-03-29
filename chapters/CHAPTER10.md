@@ -12,6 +12,9 @@
 11. Aggressive autovacuum https://dba.stackexchange.com/questions/21068/aggressive-autovacuum-on-postgresql 
 12. Цель статистики https://postgresqlco.nf/doc/en/param/default_statistics_target/ 
 13. Обновление статистики https://www.2ndquadrant.com/en/blog/postgresql-vacuum-and-analyze-best-practice-tips/ 
-14. Refresh mat.view https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html 
-15. Риски копирования URL: https://habr.com/ru/companies/astralinux/articles/707258/
-16. Pg_anon URL: https://github.com/ismaelga/pg-anon 
+14. Pg_repack https://reorg.github.io/pg_repack/ 
+15. Pg_comacttable https://github.com/dataegret/pgcompacttable 
+16. Not compact TOAST https://github.com/dataegret/pgcompacttable/issues/33 
+17. Refresh mat.view https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html 
+18. Риски копирования URL: https://habr.com/ru/companies/astralinux/articles/707258/
+19. Pg_anon URL: https://github.com/ismaelga/pg-anon 
