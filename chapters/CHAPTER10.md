@@ -18,3 +18,4 @@
 17. Refresh mat.view https://www.postgresql.org/docs/current/sql-refreshmaterializedview.html 
 18. Риски копирования URL: https://habr.com/ru/companies/astralinux/articles/707258/
 19. Pg_anon URL: https://github.com/ismaelga/pg-anon 
+20. курс Оптимизация производительности PostgreSQL https://aristov.tech/#course 

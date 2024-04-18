@@ -12,13 +12,13 @@
 10. Облачное хранилище https://cloud.google.com/storage?hl=ru 
 11. tar https://en.wikipedia.org/wiki/Tar_(computing) 
 12. psql https://www.postgresql.org/docs/current/app-psql.html 
-13. extension https://www.postgresql.org/docs/current/extend-extensions.html 
-14. uuid-ossp https://www.postgresql.org/docs/current/functions-uuid.html 
-15. UUID_v4 https://gcore.com/dev-tools/gen-uuid-v4 
-16. bigint https://www.postgresql.org/docs/current/datatype-numeric.html
-17. Overhead https://en.wikipedia.org/wiki/Overhead_(business) 
-18. MVCC https://www.postgresql.org/docs/current/mvcc.html 
-19. Visibility map https://www.postgresql.org/docs/current/storage-vm.html 
+13. Visibility map https://www.postgresql.org/docs/current/storage-vm.html 
+14. extension https://www.postgresql.org/docs/current/extend-extensions.html 
+15. uuid-ossp https://www.postgresql.org/docs/current/functions-uuid.html 
+16. UUID_v4 https://gcore.com/dev-tools/gen-uuid-v4 
+17. bigint https://www.postgresql.org/docs/current/datatype-numeric.html
+18. Overhead https://en.wikipedia.org/wiki/Overhead_(business) 
+19. MVCC https://www.postgresql.org/docs/current/mvcc.html 
 20. UUID v7 https://pgxn.org/dist/pg_uuidv7/ 
 21. Proxmos https://www.proxmox.com/en/ 
 22. Hyper-V https://en.wikipedia.org/wiki/Hyper-V 
