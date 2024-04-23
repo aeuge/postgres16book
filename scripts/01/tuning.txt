@@ -4,6 +4,7 @@ psql -d thai
 \l+
 EXPLAIN SELECT count(*) FROM book.tickets;
 EXPLAIN SELECT count(1) FROM book.tickets;
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname like 'tickets%';
 VACUUM ANALYZE book.tickets;
 SET random_page_cost = 1;
 EXPLAIN SELECT count(1) FROM book.tickets;
