@@ -15,4 +15,4 @@
 9. [Оптимизация запросов](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER09.md)
 10. [Обслуживание СУБД](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER10.md)
 
-![Обложка книги](https://github.com/aeuge/postgres16book/blob/main/cover16.png)
+![Обложка книги](https://github.com/aeuge/postgres16book/blob/main/cover16.jpg)
