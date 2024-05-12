@@ -4,6 +4,7 @@
 #### В этой книге сделан акцент на внутреннее устройство PostgreSQL 16 и методы оптимизации производительности.
 #### Рассмотрены лучшие production практики, в каждой главе есть чеклисты, типичные ошибки и примеры улучшения ваших СУБД.
 #### Для демонстрации примеров и проведения бенчмарков создана уникальная БД по пассажирским автобусным перевозкам в Тайланде. Подробнее [Thai booking](https://github.com/aeuge/postgres16book/blob/main/database/README.md)
+#### Заказ https://aristov.tech/#orderbook
 ## Оглавление 
 1. [Настройка ВМ, ОС и PostgreSQL](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER01.md)
 2. [Подключение к PostgreSQL. Права пользователя](https://github.com/aeuge/Postgres16book/blob/main/chapters/CHAPTER02.md)
